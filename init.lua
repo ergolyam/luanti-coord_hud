@@ -14,13 +14,16 @@ local function load_settings(player)
     local meta = player:get_meta()
     local pos_x = tonumber(meta:get_string("coord_hud:pos_x")) or DEFAULT_POS.x
     local pos_y = tonumber(meta:get_string("coord_hud:pos_y")) or DEFAULT_POS.y
-    local size  = tonumber(meta:get_string("coord_hud:size"))  or DEFAULT_TEXT_SCALE
+    local size = tonumber(meta:get_string("coord_hud:size")) or DEFAULT_TEXT_SCALE
+    local enabled_str = meta:get_string("coord_hud:enabled")
+    local enabled = enabled_str == "" and true or (enabled_str == "true")
     return {
         position = { x = pos_x, y = pos_y },
-        offset   = DEFAULT_OFFSET,
-        align    = DEFAULT_ALIGN,
-        color    = DEFAULT_COLOR,
-        size     = size
+        offset = DEFAULT_OFFSET,
+        align = DEFAULT_ALIGN,
+        color = DEFAULT_COLOR,
+        size = size,
+        enabled = enabled
     }
 end
 
@@ -28,29 +31,31 @@ local function save_settings(player, s)
     local meta = player:get_meta()
     meta:set_string("coord_hud:pos_x", tostring(s.position.x))
     meta:set_string("coord_hud:pos_y", tostring(s.position.y))
-    meta:set_string("coord_hud:size",  tostring(s.size))
+    meta:set_string("coord_hud:size", tostring(s.size))
+    meta:set_string("coord_hud:enabled", s.enabled and "true" or "false")
 end
 
 local function add_hud(player, s)
     local id = player:hud_add({
         hud_elem_type = "text",
-        position      = s.position,
-        offset        = s.offset,
-        alignment     = s.align,
-        number        = s.color,
-        text          = "",
-        size          = { x = s.size, y = 0 },
-        z_index       = 100
+        position = s.position,
+        offset = s.offset,
+        alignment = s.align,
+        number = s.color,
+        text = "",
+        size = { x = s.size, y = 0 },
+        z_index = 100
     })
     return id
 end
 
 local function apply_visual(player, id, s)
+    if not id then return end
     player:hud_change(id, "position", s.position)
-    player:hud_change(id, "offset",   s.offset)
+    player:hud_change(id, "offset", s.offset)
     player:hud_change(id, "alignment", s.align)
-    player:hud_change(id, "number",   s.color)
-    player:hud_change(id, "size",     { x = s.size, y = 0 })
+    player:hud_change(id, "number", s.color)
+    player:hud_change(id, "size", { x = s.size, y = 0 })
 end
 
 local function update_text(player, id)
@@ -66,24 +71,22 @@ end
 local function show_config(player)
     local name = pname(player)
     local s = hud_state[name].settings
-
     local x_val = math.floor(s.position.x * 1000 + 0.5)
     local y_val = math.floor(s.position.y * 1000 + 0.5)
-
     local fs = table.concat({
         "formspec_version[4]",
         "size[12,7,true]",
         "label[0.6,0.5;Move the sliders to place the HUD text.]",
-        "label[0.6,1.2;Horizontal position]",
-        "scrollbar[0.6,1.6;10.8,0.5;horizontal;cohud_x;", tostring(x_val), "]",
-        "label[0.6,2.6;Vertical position]",
-        "scrollbar[0.6,3.0;10.8,0.5;horizontal;cohud_y;", tostring(y_val), "]",
-        "field[0.6,3.8;4,1;cohud_size_field;;", string.format("%.2f", s.size), "]",
-        "label[5.0,4.3;Text size (0.5–3.0)]",
+        "checkbox[0.6,0.9;cohud_enabled;Enabled;", s.enabled and "true" or "false", "]",
+        "label[0.6,1.6;Horizontal position]",
+        "scrollbar[0.6,2.0;10.8,0.5;horizontal;cohud_x;", tostring(x_val), "]",
+        "label[0.6,2.9;Vertical position]",
+        "scrollbar[0.6,3.3;10.8,0.5;horizontal;cohud_y;", tostring(y_val), "]",
+        "field[0.6,4.0;4,1;cohud_size_field;;", string.format("%.2f", s.size), "]",
+        "label[5.0,4.5;Text size (0.5–3.0)]",
         "button[0.6,5.6;3,1;cohud_reset;Reset]",
         "button_exit[8.4,5.6;3,1;cohud_close;Close]"
     })
-
     minetest.show_formspec(name, "coord_hud:config", fs)
 end
 
@@ -91,7 +94,6 @@ local function handle_scroll(player, fields)
     local name = pname(player)
     local s = hud_state[name].settings
     local id = hud_state[name].id
-
     if fields.cohud_x then
         local e = minetest.explode_scrollbar_event(fields.cohud_x)
         if e and e.type == "CHG" then
@@ -100,7 +102,6 @@ local function handle_scroll(player, fields)
             save_settings(player, s)
         end
     end
-
     if fields.cohud_y then
         local e = minetest.explode_scrollbar_event(fields.cohud_y)
         if e and e.type == "CHG" then
@@ -114,7 +115,10 @@ end
 minetest.register_on_joinplayer(function(player)
     local name = pname(player)
     local settings = load_settings(player)
-    local id = add_hud(player, settings)
+    local id = nil
+    if settings.enabled then
+        id = add_hud(player, settings)
+    end
     hud_state[name] = { id = id, settings = settings }
 end)
 
@@ -142,7 +146,10 @@ minetest.register_chatcommand("coords", {
         if not player then return false, "Player not found." end
         if not hud_state[name] then
             local settings = load_settings(player)
-            local id = add_hud(player, settings)
+            local id = nil
+            if settings.enabled then
+                id = add_hud(player, settings)
+            end
             hud_state[name] = { id = id, settings = settings }
         end
         show_config(player)
@@ -154,9 +161,21 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= "coord_hud:config" then
         return false
     end
-
     handle_scroll(player, fields)
-
+    if fields.cohud_enabled ~= nil then
+        local name = pname(player)
+        local st = hud_state[name]
+        local new_enabled = minetest.is_yes(fields.cohud_enabled)
+        st.settings.enabled = new_enabled
+        save_settings(player, st.settings)
+        if new_enabled and not st.id then
+            st.id = add_hud(player, st.settings)
+            apply_visual(player, st.id, st.settings)
+        elseif (not new_enabled) and st.id then
+            player:hud_remove(st.id)
+            st.id = nil
+        end
+    end
     if fields.cohud_size_field then
         local name = pname(player)
         local st = hud_state[name]
@@ -173,7 +192,6 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
             end
         end
     end
-
     if fields.cohud_reset then
         local name = pname(player)
         local s = hud_state[name].settings
@@ -183,7 +201,6 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         save_settings(player, s)
         show_config(player)
     end
-
     return false
 end)
 
