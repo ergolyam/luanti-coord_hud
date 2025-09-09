@@ -59,13 +59,27 @@ local function apply_visual(player, id, s)
 end
 
 local function update_text(player, id)
+    local st = hud_state[pname(player)]
+    if not st then return end
+
     local pos = player:get_pos()
     if not pos then return end
+
     local x = math.floor(pos.x + 0.5)
     local y = math.floor(pos.y + 0.5)
     local z = math.floor(pos.z + 0.5)
+
+    if st.last_x == x and st.last_y == y and st.last_z == z then
+        return
+    end
+
+    st.last_x, st.last_y, st.last_z = x, y, z
     local txt = ("X: %d  Y: %d  Z: %d"):format(x, y, z)
-    player:hud_change(id, "text", txt)
+
+    if st.last_text ~= txt then
+        st.last_text = txt
+        player:hud_change(id, "text", txt)
+    end
 end
 
 local function show_config(player)
@@ -170,6 +184,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         save_settings(player, st.settings)
         if new_enabled and not st.id then
             st.id = add_hud(player, st.settings)
+            st.last_text = nil
             apply_visual(player, st.id, st.settings)
         elseif (not new_enabled) and st.id then
             player:hud_remove(st.id)
